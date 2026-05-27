@@ -1,0 +1,109 @@
+version: "3.8"
+
+# ─────────────────────────────────────────────────────────────
+# Campanha360 — Stack: n8n + Caddy + PostgreSQL
+# Oracle Cloud Free Tier (ARM, 4 vCPU, 24 GB RAM)
+# Custo: R$ 0/mês
+# ─────────────────────────────────────────────────────────────
+
+services:
+
+  # ── CADDY — Proxy reverso com HTTPS automático ─────────────
+  caddy:
+    image: caddy:2-alpine
+    container_name: campanha360_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - campanha360_net
+    depends_on:
+      - n8n
+
+  # ── POSTGRESQL — Banco de dados do n8n ─────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: campanha360_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-n8n}
+      POSTGRES_USER: ${POSTGRES_USER:-n8n}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - campanha360_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-n8n} -d ${POSTGRES_DB:-n8n}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── N8N — Motor de automação ────────────────────────────────
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: campanha360_n8n
+    restart: unless-stopped
+    environment:
+      # Banco de dados
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB:-n8n}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-n8n}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+
+      # URL pública — EDITE com seu domínio
+      N8N_HOST: ${N8N_HOST}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: https
+      WEBHOOK_URL: https://${N8N_HOST}/
+
+      # Segurança
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
+
+      # Execução
+      EXECUTIONS_MODE: regular
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: 336        # 14 dias
+      EXECUTIONS_DATA_SAVE_ON_ERROR: all
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: none   # economiza disco
+
+      # Timezone
+      GENERIC_TIMEZONE: America/Sao_Paulo
+      TZ: America/Sao_Paulo
+
+      # Editor (desabilita telemetria)
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      N8N_TEMPLATES_ENABLED: "true"
+
+      # Limite de payload (webhooks Meta podem ser grandes)
+      N8N_PAYLOAD_SIZE_MAX: 16
+
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - campanha360_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+# ── VOLUMES ─────────────────────────────────────────────────
+volumes:
+  postgres_data:
+  n8n_data:
+  caddy_data:
+  caddy_config:
+
+# ── REDE INTERNA ─────────────────────────────────────────────
+networks:
+  campanha360_net:
+    driver: bridge

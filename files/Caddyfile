@@ -1,0 +1,48 @@
+# ─────────────────────────────────────────────────────────────
+# Caddyfile — Campanha360
+# HTTPS automático via Let's Encrypt (gratuito)
+# Substitua SEU_DOMINIO.duckdns.org pelo seu domínio real
+# ─────────────────────────────────────────────────────────────
+
+{
+    # E-mail para notificações do Let's Encrypt
+    email seu@email.com.br
+
+    # Logs compactos
+    log {
+        level ERROR
+    }
+}
+
+# Domínio principal — edite aqui
+SEU_DOMINIO.duckdns.org {
+
+    # Proxy para o n8n interno
+    reverse_proxy n8n:5678 {
+        # Necessário para webhooks WebSocket do n8n
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # Headers de segurança
+    header {
+        # Bloqueia iframes externos
+        X-Frame-Options SAMEORIGIN
+        # Previne sniffing de MIME
+        X-Content-Type-Options nosniff
+        # HSTS — 6 meses
+        Strict-Transport-Security "max-age=15768000"
+        # Remove header de servidor
+        -Server
+    }
+
+    # Logs de acesso (opcional — remova se quiser menos disco)
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 10mb
+            roll_keep 3
+        }
+    }
+}
